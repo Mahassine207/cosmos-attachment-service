@@ -26,19 +26,16 @@ public class AttachmentController {
     @Inject
     AttachmentService attachmentService;
 
-    /**
-     * UPLOAD : Enregistre soit une Photo, soit un Attachment selon le fichier
-     */
+    // UPLOAD
     @POST
     @Path("/{ownerType}/{ownerId}")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    @Operation(summary = "Upload d'une ressource", description = "Routage intelligent vers table Photos ou Attachments")
     public Response upload(
             @RestPath("ownerType") OwnerType ownerType,
             @RestPath("ownerId") UUID ownerId,
-            @BeanParam CreateAttachmentRequest request) { // Utilisation de @BeanParam pour mapper le multipart au DTO
+            @BeanParam CreateAttachmentRequest request) {
 
-        log.info("🚀 Upload request received: Type={}, OwnerID={}", ownerType, ownerId);
+        log.info("Upload request received: Type={}, OwnerID={}", ownerType, ownerId);
         AttachmentResponse response = attachmentService.upload(ownerType, ownerId, request);
 
         return Response.status(Response.Status.CREATED)
@@ -46,41 +43,33 @@ public class AttachmentController {
                 .build();
     }
 
-    /**
-     * GET BY ID : Recherche dans les deux tables
-     */
+
+     // GET BY ID : Recherche dans les deux tables
     @GET
     @Path("/{id}")
-    @Operation(summary = "Récupérer une ressource par ID")
     public Response getById(@RestPath("id") UUID id) {
         log.info("🔍 Fetching metadata for ID: {}", id);
         AttachmentResponse response = attachmentService.getById(id);
         return Response.ok(response).build();
     }
 
-    /**
-     * LIST BY OWNER : Fusionne Photos et Attachments
-     */
+    // LIST BY OWNER
     @GET
     @Path("/owner/{ownerType}/{ownerId}")
-    @Operation(summary = "Lister tout le contenu d'un propriétaire (Images + Docs)")
     public Response getByOwner(
             @RestPath("ownerType") OwnerType ownerType,
             @RestPath("ownerId") UUID ownerId) {
 
-        log.info("📂 Listing resources for {}/{}", ownerType, ownerId);
+        log.info("Listing resources for {}/{}", ownerType, ownerId);
         List<AttachmentResponse> responses = attachmentService.getByOwner(ownerType, ownerId);
         return Response.ok(responses).build();
     }
 
-    /**
-     * DELETE : Nettoyage physique (S3) et logique (DB)
-     */
+    // DELETE
     @DELETE
     @Path("/{id}")
-    @Operation(summary = "Supprimer une ressource")
     public Response delete(@RestPath("id") UUID id) {
-        log.info("🗑️ Deleting resource: {}", id);
+        log.info("🗑Deleting resource: {}", id);
         attachmentService.delete(id);
         return Response.noContent().build();
     }

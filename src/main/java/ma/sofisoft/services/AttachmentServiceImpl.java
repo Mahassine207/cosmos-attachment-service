@@ -44,13 +44,11 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     private static final long MAX_SIZE = 20L * 1024 * 1024; // 20MB
 
-    // ==========================================
-    //                UPLOAD
-    // ==========================================
+    // UPLOAD
     @Override
     @Transactional
     public AttachmentResponse upload(OwnerType ownerType, UUID ownerId, CreateAttachmentRequest request) {
-        // 1. Validation de sécurité
+        // Security Validation
         validateRequest(request);
 
         String mimeType = request.getFile().contentType();
@@ -58,11 +56,10 @@ public class AttachmentServiceImpl implements AttachmentService {
         String extension = getExtension(filename);
         String user = (request.getCreatedBy() != null) ? request.getCreatedBy() : "anonymous";
 
-        // 2. Détection du type (Photo vs Document)
+        // Type detection (Photo OR Document)
         boolean isPhoto = (mimeType != null && mimeType.toLowerCase().startsWith("image/"));
 
-        // 3. Préparation du stockage MinIO
-        // On génère un UUID unique pour le nom du fichier sur S3 (différent de l'ID DB)
+        // Generation of UUID
         UUID storageUuid = UUID.randomUUID();
         String bucket = tenantContext.getBucket();
         String minioKey = tenantContext.buildMinioKey(
@@ -72,14 +69,14 @@ public class AttachmentServiceImpl implements AttachmentService {
                 extension
         );
 
-        // 4. Upload physique vers MinIO
-        log.info("📤 Uploading {} to MinIO (Key: {})", isPhoto ? "PHOTO" : "FILE", minioKey);
+        // Upload in MinIO
+        log.info("Uploading {} to MinIO (Key: {})", isPhoto ? "PHOTO" : "FILE", minioKey);
         minioClientService.upload(bucket, minioKey, request.getFile().uploadedFile(), mimeType);
 
-        // 5. Génération de l'URL d'accès
+        // Genaration of PresignedUrl
         String url = minioClientService.getPresignedUrl(bucket, minioKey);
 
-        // 6. Persistance en base de données
+        // Persistance in DB
         if (isPhoto) {
             return persistAsPhoto(ownerType, ownerId, url, user, filename, mimeType);
         } else {
@@ -89,7 +86,6 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     private AttachmentResponse persistAsPhoto(OwnerType type, UUID ownerId, String url, String user, String name, String mime) {
         long photoCount = photoRepository.count("ownerType = ?1 and ownerId = ?2", type, ownerId);
-
         Photo photo = Photo.builder()
                 .ownerType(type)
                 .ownerId(ownerId)
@@ -100,16 +96,14 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        // Hibernate génère l'ID ici
         photoRepository.persist(photo);
-        log.info("✅ Photo saved with DB-ID: {}", photo.getId());
+        log.info("Photo saved with DB-ID: {}", photo.getId());
 
-        return buildResponseFromPhoto(photo, name, mime);
+        return attachmentMapper.photoToResponse(photo, name, mime, url);
     }
 
     private AttachmentResponse persistAsAttachment(OwnerType type, UUID ownerId, String bucket, String key, String url, String user, String name, String mime, long size) {
         Attachment entity = Attachment.builder()
-                // On ne passe PAS d'ID manuel ici pour éviter l'EntityExistsException
                 .ownerType(type)
                 .ownerId(ownerId)
                 .originalFilename(name)
@@ -122,18 +116,15 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        // Hibernate génère l'ID ici
         attachmentRepository.persist(entity);
-        log.info("✅ Attachment saved with DB-ID: {}", entity.getId());
+        log.info("Attachment saved with DB-ID: {}", entity.getId());
 
         AttachmentResponse response = attachmentMapper.toResponse(entity);
         response.setUrl(url);
         return response;
     }
 
-    // ==========================================
-    //              GET BY ID
-    // ==========================================
+    // GET BY ID
     @Override
     @Transactional
     public AttachmentResponse getById(UUID id) {
@@ -144,13 +135,11 @@ public class AttachmentServiceImpl implements AttachmentService {
                     return res;
                 })
                 .orElseGet(() -> photoRepository.findByIdOptional(id)
-                        .map(p -> buildResponseFromPhoto(p, "Image", "image/*"))
+                        .map(p -> attachmentMapper.photoToResponse(p, "Image", "image/*", p.getUrl()))
                         .orElseThrow(() -> new AttachmentNotFoundException(id)));
     }
 
-    // ==========================================
-    //             GET BY OWNER
-    // ==========================================
+    // GET BY OWNER
     @Override
     @Transactional
     public List<AttachmentResponse> getByOwner(OwnerType ownerType, UUID ownerId) {
@@ -165,45 +154,37 @@ public class AttachmentServiceImpl implements AttachmentService {
 
         photoRepository.find("ownerType = ?1 and ownerId = ?2", ownerType, ownerId)
                 .list()
-                .forEach(p -> results.add(buildResponseFromPhoto(p, "Image", "image/*")));
+                .forEach(p -> results.add(attachmentMapper.photoToResponse(p, "Image", "image/*", p.getUrl())));
 
         return results;
     }
 
-    // ==========================================
-    //               DELETE
-    // ==========================================
+    // DELETE
     @Override
     @Transactional
     public void delete(UUID id) {
-        // 1. Chercher dans les Attachments (Documents)
         var attachmentOpt = attachmentRepository.findByIdOptional(id);
         if (attachmentOpt.isPresent()) {
             Attachment e = attachmentOpt.get();
-            // Suppression physique sur MinIO
+            // Delete from MinIO
             minioClientService.delete(e.getBucket(), e.getMinioKey());
-            // Suppression DB
+            // Delete from DB
             attachmentRepository.delete(e);
-            log.info("🗑️ Document deleted (DB + MinIO): {}", id);
+            log.info("🗑Document deleted (DB + MinIO): {}", id);
             return;
         }
 
-        // 2. Chercher dans les Photos
         var photoOpt = photoRepository.findByIdOptional(id);
         if (photoOpt.isPresent()) {
             Photo p = photoOpt.get();
-            // Note: On pourrait aussi supprimer sur MinIO ici si on stockait la clé
             photoRepository.delete(p);
-            log.info("🗑️ Photo deleted (DB): {}", id);
+            log.info("🗑Photo deleted (DB): {}", id);
             return;
         }
 
         throw new AttachmentNotFoundException(id);
     }
 
-    // ==========================================
-    //              HELPERS
-    // ==========================================
     private void validateRequest(CreateAttachmentRequest request) {
         if (request.getFile() == null || request.getFile().uploadedFile() == null) {
             throw new BusinessException("Missing file", "MISSING_FILE", 400);
@@ -216,18 +197,5 @@ public class AttachmentServiceImpl implements AttachmentService {
     private String getExtension(String filename) {
         int dotIndex = filename.lastIndexOf('.');
         return (dotIndex >= 0) ? filename.substring(dotIndex + 1).toLowerCase() : "bin";
-    }
-
-    private AttachmentResponse buildResponseFromPhoto(Photo p, String name, String mime) {
-        AttachmentResponse res = new AttachmentResponse();
-        res.setId(p.getId());
-        res.setOwnerType(p.getOwnerType());
-        res.setOwnerId(p.getOwnerId());
-        res.setUrl(p.getUrl());
-        res.setMimeType(mime);
-        res.setOriginalFilename(name);
-        res.setCreatedBy(p.getCreatedBy());
-        res.setCreatedAt(p.getCreatedAt());
-        return res;
     }
 }
