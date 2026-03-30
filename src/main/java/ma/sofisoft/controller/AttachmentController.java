@@ -10,9 +10,6 @@ import ma.sofisoft.dtos.CreateAttachmentRequest;
 import ma.sofisoft.enums.OwnerType;
 import ma.sofisoft.services.AttachmentService;
 import org.jboss.resteasy.reactive.RestPath;
-import org.jboss.resteasy.reactive.RestForm; // Import important pour le Multipart
-import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,7 +17,6 @@ import java.util.UUID;
 @Slf4j
 @Path("/attachments")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "Attachment Resource", description = "Gestion hybride (Photos & Documents) pour Projet COSMOS")
 public class AttachmentController {
 
     @Inject
@@ -48,7 +44,7 @@ public class AttachmentController {
     @GET
     @Path("/{id}")
     public Response getById(@RestPath("id") UUID id) {
-        log.info("🔍 Fetching metadata for ID: {}", id);
+        log.info("Fetching metadata for ID: {}", id);
         AttachmentResponse response = attachmentService.getById(id);
         return Response.ok(response).build();
     }
@@ -69,7 +65,7 @@ public class AttachmentController {
     @DELETE
     @Path("/{id}")
     public Response delete(@RestPath("id") UUID id) {
-        log.info("🗑Deleting resource: {}", id);
+        log.info("Deleting resource: {}", id);
         attachmentService.delete(id);
         return Response.noContent().build();
     }

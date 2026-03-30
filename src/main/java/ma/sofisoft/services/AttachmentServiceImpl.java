@@ -60,7 +60,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         String extension = getExtension(filename);
         String user = (request.getCreatedBy() != null) ? request.getCreatedBy() : "anonymous";
 
-        // Type detection (Photo OR Document) - Corrigé : Détection par extension
+        // Type detection (Photo OR Document) By extension
         boolean isPhoto = PHOTO_EXTENSIONS.contains(extension.toLowerCase());
 
         // Generation of UUID
@@ -174,7 +174,7 @@ public class AttachmentServiceImpl implements AttachmentService {
             minioClientService.delete(e.getBucket(), e.getMinioKey());
             // Delete from DB
             attachmentRepository.delete(e);
-            log.info("🗑Document deleted (DB + MinIO): {}", id);
+            log.info("Document deleted (DB + MinIO): {}", id);
             return;
         }
 
@@ -182,7 +182,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         if (photoOpt.isPresent()) {
             Photo p = photoOpt.get();
             photoRepository.delete(p);
-            log.info("🗑Photo deleted (DB): {}", id);
+            log.info("Photo deleted (DB): {}", id);
             return;
         }
 

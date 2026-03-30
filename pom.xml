@@ -23,7 +23,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Quarkus BOM -->
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>${quarkus.platform.artifact-id}</artifactId>
@@ -43,8 +42,6 @@
     </dependencyManagement>
 
     <dependencies>
-
-        <!-- ── REST ── -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>
@@ -54,7 +51,7 @@
             <artifactId>quarkus-rest-jackson</artifactId>
         </dependency>
 
-        <!-- ── PANACHE + POSTGRESQL ── -->
+        <!-- Hibernate ORM PANACHE + POSTGRESQL -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-orm-panache</artifactId>
@@ -64,19 +61,19 @@
             <artifactId>quarkus-jdbc-postgresql</artifactId>
         </dependency>
 
-        <!-- ── LIQUIBASE ── -->
+        <!-- LIQUIBASE -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-liquibase</artifactId>
         </dependency>
 
-        <!-- ── VALIDATION ── -->
+        <!-- Bean Validation -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-validator</artifactId>
         </dependency>
 
-        <!-- ── OPENAPI + SWAGGER ── -->
+        <!-- SWAGGER/OpenAPI -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-openapi</artifactId>
@@ -86,7 +83,13 @@
             <artifactId>quarkus-swagger-ui</artifactId>
         </dependency>
 
-        <!-- ── AMAZON S3 (MinIO) ── -->
+        <!-- CDI -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+
+        <!-- AMAZON S3 (MinIO) -->
         <dependency>
             <groupId>io.quarkiverse.amazonservices</groupId>
             <artifactId>quarkus-amazon-s3</artifactId>
@@ -96,7 +99,7 @@
             <artifactId>url-connection-client</artifactId>
         </dependency>
 
-        <!-- ── LOMBOK ── -->
+        <!-- LOMBOK -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -104,14 +107,14 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- ── MAPSTRUCT ── -->
+        <!-- MAPSTRUCT -->
         <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
             <version>${mapstruct.version}</version>
         </dependency>
 
-        <!-- ── TESTS ── -->
+        <!-- TESTS -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit5</artifactId>
@@ -127,8 +130,6 @@
 
     <build>
         <plugins>
-
-            <!-- ── QUARKUS ── -->
             <plugin>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>
@@ -145,7 +146,6 @@
                 </executions>
             </plugin>
 
-            <!-- ── COMPILER + LOMBOK + MAPSTRUCT ── -->
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${compiler-plugin.version}</version>

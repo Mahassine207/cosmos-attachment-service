@@ -21,13 +21,13 @@ public class MinioClientService {
     @Inject
     S3Presigner s3Presigner;
 
-    // ── UPLOAD ──
+    // UPLOAD
     public void upload(String bucket,
                        String minioKey,
                        Path filePath,
                        String mimeType) {
         try {
-            // Créer bucket si non existant
+            // Create bucket if not exists
             boolean exists = bucketExists(bucket);
             if (!exists) {
                 log.info("Creating bucket: {}", bucket);
@@ -37,7 +37,7 @@ public class MinioClientService {
                                 .build());
             }
 
-            // Uploader le fichier
+            // Upload file
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucket)
@@ -56,7 +56,7 @@ public class MinioClientService {
         }
     }
 
-    // ── PRESIGNED URL ──
+    // Genarate a Presigned Url
     public String getPresignedUrl(String bucket, String minioKey) {
         try {
             GetObjectPresignRequest presignRequest =
@@ -84,7 +84,7 @@ public class MinioClientService {
         }
     }
 
-    // ── DELETE ──
+    // DELETE
     public void delete(String bucket, String minioKey) {
         try {
             s3Client.deleteObject(
@@ -102,7 +102,7 @@ public class MinioClientService {
         }
     }
 
-    // ── BUCKET EXISTS ──
+    // BUCKET EXISTS
     private boolean bucketExists(String bucket) {
         try {
             s3Client.headBucket(

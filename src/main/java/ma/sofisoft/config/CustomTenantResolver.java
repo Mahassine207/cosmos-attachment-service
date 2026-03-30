@@ -34,8 +34,6 @@ public class CustomTenantResolver implements TenantResolver {
             return "public";
         }
 
-        // Nettoyage : PostgreSQL n'aime pas les tirets dans les noms de schémas non quotés
-        // On remplace les tirets par des underscores
         String safeTenant = tenantId.replaceAll("-", "_").replaceAll("[^a-zA-Z0-9_]", "");
 
         ensureSchemaAndTablesExist(safeTenant);
@@ -48,16 +46,16 @@ public class CustomTenantResolver implements TenantResolver {
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
 
-            // Création et clonage
+            // Creation & clonage
             statement.execute("CREATE SCHEMA IF NOT EXISTS " + schema);
             statement.execute("CREATE TABLE IF NOT EXISTS " + schema + ".attachment (LIKE public.attachment INCLUDING ALL)");
             statement.execute("CREATE TABLE IF NOT EXISTS " + schema + ".photos (LIKE public.photos INCLUDING ALL)");
 
             validatedTenants.add(schema);
-            log.info("🚀 Schema architecture ready for tenant: {}", schema);
+            log.info("Schema architecture ready for tenant: {}", schema);
 
         } catch (Exception e) {
-            log.error("❌ Critical error initializing tenant {}: {}", schema, e.getMessage());
+            log.error("Critical error initializing tenant {}: {}", schema, e.getMessage());
         }
     }
 }

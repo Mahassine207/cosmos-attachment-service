@@ -14,7 +14,7 @@ public class TenantContext {
     HttpHeaders headers;
 
     public String getTenantId() {
-        // Récupérer le tenant depuis le header X-Tenant-Id
+        // Get the tenant from header X-Tenant-Id
         String tenantId = headers.getHeaderString("X-Tenant-Id");
 
         if (tenantId == null || tenantId.isBlank()) {
