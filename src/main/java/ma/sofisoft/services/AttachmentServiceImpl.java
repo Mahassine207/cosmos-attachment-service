@@ -19,6 +19,7 @@ import ma.sofisoft.repositories.PhotoRepository;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -44,6 +45,9 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     private static final long MAX_SIZE = 20L * 1024 * 1024; // 20MB
 
+    // Photo extensions
+    private static final List<String> PHOTO_EXTENSIONS = Arrays.asList("jpg", "jpeg", "png", "gif", "webp", "bmp");
+
     // UPLOAD
     @Override
     @Transactional
@@ -56,8 +60,8 @@ public class AttachmentServiceImpl implements AttachmentService {
         String extension = getExtension(filename);
         String user = (request.getCreatedBy() != null) ? request.getCreatedBy() : "anonymous";
 
-        // Type detection (Photo OR Document)
-        boolean isPhoto = (mimeType != null && mimeType.toLowerCase().startsWith("image/"));
+        // Type detection (Photo OR Document) - Corrigé : Détection par extension
+        boolean isPhoto = PHOTO_EXTENSIONS.contains(extension.toLowerCase());
 
         // Generation of UUID
         UUID storageUuid = UUID.randomUUID();
@@ -183,6 +187,22 @@ public class AttachmentServiceImpl implements AttachmentService {
         }
 
         throw new AttachmentNotFoundException(id);
+    }
+
+    // DELETE BY OWNER
+    @Override
+    @Transactional
+    public void deleteByOwner(OwnerType ownerType, UUID ownerId) {
+        log.info("🗑️ Deleting all resources for owner: {}/{}", ownerType, ownerId);
+
+        // Nettoyage MinIO
+        attachmentRepository.find("ownerType = ?1 and ownerId = ?2", ownerType, ownerId)
+                .stream()
+                .forEach(e -> minioClientService.delete(e.getBucket(), e.getMinioKey()));
+
+        // Suppression DB
+        attachmentRepository.delete("ownerType = ?1 and ownerId = ?2", ownerType, ownerId);
+        photoRepository.delete("ownerType = ?1 and ownerId = ?2", ownerType, ownerId);
     }
 
     private void validateRequest(CreateAttachmentRequest request) {

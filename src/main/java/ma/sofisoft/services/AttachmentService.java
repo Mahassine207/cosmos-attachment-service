@@ -11,4 +11,5 @@ public interface AttachmentService {
     AttachmentResponse getById(UUID id);
     List<AttachmentResponse> getByOwner(OwnerType ownerType, UUID ownerId);
     void delete(UUID id);
+    void deleteByOwner(OwnerType ownerType, UUID ownerId);
 }
