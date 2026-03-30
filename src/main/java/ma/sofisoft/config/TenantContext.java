@@ -1,8 +1,8 @@
 package ma.sofisoft.config;
 
 import jakarta.enterprise.context.RequestScoped;
-import jakarta.inject.Inject;
-import org.eclipse.microprofile.jwt.JsonWebToken;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import lombok.extern.slf4j.Slf4j;
 import ma.sofisoft.exceptions.BusinessException;
 
@@ -10,27 +10,33 @@ import ma.sofisoft.exceptions.BusinessException;
 @RequestScoped
 public class TenantContext {
 
-    @Inject
-    JsonWebToken jwt;
+    @Context
+    HttpHeaders headers;
 
     public String getTenantId() {
-        // Extraction sécurisée depuis le claim 'tenant' du JWT Keycloak
-        String tenantId = jwt.getClaim("tenant");
+        // Récupérer le tenant depuis le header X-Tenant-Id
+        String tenantId = headers.getHeaderString("X-Tenant-Id");
 
         if (tenantId == null || tenantId.isBlank()) {
-            log.error("Accès refusé : Aucun claim 'tenant' trouvé dans le JWT");
-            throw new BusinessException("Unauthorized: Missing tenant claim", "TENANT_REQUIRED", 401);
+            log.error("Missing X-Tenant-Id header");
+            throw new BusinessException(
+                    "Missing X-Tenant-Id header",
+                    "TENANT_REQUIRED",
+                    400);
         }
+
+        log.debug("TenantId resolved: {}", tenantId);
         return tenantId;
     }
 
     public String getBucket() {
-        // Format : tenant-organization1
         return "tenant-" + getTenantId().toLowerCase();
     }
 
-    public String buildMinioKey(String ownerType, String ownerId, String uuid, String extension) {
-        // Format : photos/TIER/{uuid-tier}/{uuid-img}.jpg
+    public String buildMinioKey(String ownerType,
+                                String ownerId,
+                                String uuid,
+                                String extension) {
         return String.format("%s/%s/%s.%s",
                 ownerType, ownerId, uuid, extension.toLowerCase());
     }

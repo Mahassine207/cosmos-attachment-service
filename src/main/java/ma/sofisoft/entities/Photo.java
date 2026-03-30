@@ -30,7 +30,7 @@ public class Photo {
     @Column(name = "owner_id", nullable = false)
     private UUID ownerId;
 
-    @Column(name = "url", nullable = false)
+    @Column(name = "url", nullable = false, columnDefinition = "TEXT")
     private String url;
 
     @Column(name = "is_main", nullable = false)

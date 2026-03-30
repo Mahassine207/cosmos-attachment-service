@@ -1,98 +1,117 @@
 package ma.sofisoft.client;
 
-import io.minio.*;
-import io.minio.http.Method;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 @Slf4j
 @ApplicationScoped
 public class MinioClientService {
 
     @Inject
-    MinioClient minioClient;
+    S3Client s3Client;
 
-    // UPLOAD
+    @Inject
+    S3Presigner s3Presigner;
+
+    // ── UPLOAD ──
     public void upload(String bucket,
                        String minioKey,
                        Path filePath,
                        String mimeType) {
         try {
-            boolean exists = minioClient.bucketExists(
-                    BucketExistsArgs.builder()
-                            .bucket(bucket)
-                            .build());
-
-            // Create the bucket if not exists
+            // Créer bucket si non existant
+            boolean exists = bucketExists(bucket);
             if (!exists) {
-                log.info("Creation of the bucket : {}", bucket);
-                minioClient.makeBucket(
-                        MakeBucketArgs.builder()
+                log.info("Creating bucket: {}", bucket);
+                s3Client.createBucket(
+                        CreateBucketRequest.builder()
                                 .bucket(bucket)
                                 .build());
             }
 
-            // Upload file
-            minioClient.uploadObject(
-                    UploadObjectArgs.builder()
+            // Uploader le fichier
+            s3Client.putObject(
+                    PutObjectRequest.builder()
                             .bucket(bucket)
-                            .object(minioKey)
-                            .filename(filePath.toString())
+                            .key(minioKey)
                             .contentType(mimeType)
-                            .build());
+                            .build(),
+                    RequestBody.fromFile(filePath)
+            );
 
-            log.info("Fichier uploaded : {}/{}", bucket, minioKey);
+            log.info("File uploaded: {}/{}", bucket, minioKey);
 
         } catch (Exception e) {
-            log.error("Erreur upload MinIO : {}", e.getMessage());
+            log.error("MinIO upload error: {}", e.getMessage());
             throw new RuntimeException(
-                    "MinIO upload failed : " + e.getMessage());
+                    "MinIO upload failed: " + e.getMessage());
         }
     }
 
-    // PRESIGNED URL
-    public String getPresignedUrl(String bucket,
-                                  String minioKey) {
+    // ── PRESIGNED URL ──
+    public String getPresignedUrl(String bucket, String minioKey) {
         try {
-            String url = minioClient.getPresignedObjectUrl(
-                    GetPresignedObjectUrlArgs.builder()
-                            .bucket(bucket)
-                            .object(minioKey)
-                            .expiry(15, TimeUnit.MINUTES)
-                            .method(Method.GET)
-                            .build());
+            GetObjectPresignRequest presignRequest =
+                    GetObjectPresignRequest.builder()
+                            .signatureDuration(Duration.ofMinutes(15))
+                            .getObjectRequest(
+                                    GetObjectRequest.builder()
+                                            .bucket(bucket)
+                                            .key(minioKey)
+                                            .build())
+                            .build();
 
-            log.debug("Presigned URL generated for : {}/{}",
-                    bucket, minioKey);
+            String url = s3Presigner
+                    .presignGetObject(presignRequest)
+                    .url()
+                    .toString();
+
+            log.debug("Presigned URL generated: {}/{}", bucket, minioKey);
             return url;
 
         } catch (Exception e) {
-            log.error("Erreur Presigned URL : {}", e.getMessage());
+            log.error("Presigned URL error: {}", e.getMessage());
             throw new RuntimeException(
-                    "MinIO presigned URL failed : " + e.getMessage());
+                    "MinIO presigned URL failed: " + e.getMessage());
         }
     }
 
-    // DELETE
+    // ── DELETE ──
     public void delete(String bucket, String minioKey) {
         try {
-            minioClient.removeObject(
-                    RemoveObjectArgs.builder()
+            s3Client.deleteObject(
+                    DeleteObjectRequest.builder()
                             .bucket(bucket)
-                            .object(minioKey)
+                            .key(minioKey)
                             .build());
 
-            log.info("File deleted : {}/{}", bucket, minioKey);
+            log.info("File deleted: {}/{}", bucket, minioKey);
 
         } catch (Exception e) {
-            log.error("Erreur suppression MinIO : {}",
-                    e.getMessage());
+            log.error("MinIO delete error: {}", e.getMessage());
             throw new RuntimeException(
-                    "MinIO delete failed : " + e.getMessage());
+                    "MinIO delete failed: " + e.getMessage());
+        }
+    }
+
+    // ── BUCKET EXISTS ──
+    private boolean bucketExists(String bucket) {
+        try {
+            s3Client.headBucket(
+                    HeadBucketRequest.builder()
+                            .bucket(bucket)
+                            .build());
+            return true;
+        } catch (NoSuchBucketException e) {
+            return false;
         }
     }
 }
-

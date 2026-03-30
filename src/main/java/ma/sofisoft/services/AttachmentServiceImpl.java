@@ -9,13 +9,19 @@ import ma.sofisoft.config.TenantContext;
 import ma.sofisoft.dtos.AttachmentResponse;
 import ma.sofisoft.dtos.CreateAttachmentRequest;
 import ma.sofisoft.entities.Attachment;
+import ma.sofisoft.entities.Photo;
 import ma.sofisoft.enums.OwnerType;
 import ma.sofisoft.exceptions.AttachmentNotFoundException;
 import ma.sofisoft.exceptions.BusinessException;
 import ma.sofisoft.mappers.AttachmentMapper;
 import ma.sofisoft.repositories.AttachmentRepository;
+import ma.sofisoft.repositories.PhotoRepository;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @ApplicationScoped
@@ -23,6 +29,9 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     @Inject
     AttachmentRepository attachmentRepository;
+
+    @Inject
+    PhotoRepository photoRepository;
 
     @Inject
     MinioClientService minioClientService;
@@ -35,163 +44,190 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     private static final long MAX_SIZE = 20L * 1024 * 1024; // 20MB
 
-    // UPLOAD
+    // ==========================================
+    //                UPLOAD
+    // ==========================================
     @Override
     @Transactional
-    public AttachmentResponse upload(OwnerType ownerType,
-                                     UUID ownerId,
-                                     CreateAttachmentRequest request) {
+    public AttachmentResponse upload(OwnerType ownerType, UUID ownerId, CreateAttachmentRequest request) {
+        // 1. Validation de sécurité
+        validateRequest(request);
 
-        // 1. Validation présence fichier
-        if (request.getFile() == null ||
-                request.getFile().uploadedFile() == null) {
-            throw new BusinessException(
-                    "Missing file",
-                    "MISSING_FILE",
-                    400);
-        }
-
-        // 2. Validation taille (max 20MB)
-        if (request.getFile().size() > MAX_SIZE) {
-            throw new BusinessException(
-                    "File too large (max 20MB)",
-                    "FILE_TOO_LARGE",
-                    413);
-        }
-
-        // 3. Validation MIME
         String mimeType = request.getFile().contentType();
-        if (!isAllowedMimeType(mimeType)) {
-            log.warn("Unsupported MIME type: {}", mimeType);
-            throw new BusinessException(
-                    "File type not supported: " + mimeType,
-                    "INVALID_MIME_TYPE",
-                    415);
-        }
-
-        // 4. Extraction infos fichier
         String filename = request.getFile().fileName();
-        long sizeBytes  = request.getFile().size();
+        String extension = getExtension(filename);
+        String user = (request.getCreatedBy() != null) ? request.getCreatedBy() : "anonymous";
 
-        // Extraction extension
-        String extension = "";
-        int dotIndex = filename.lastIndexOf('.');
-        if (dotIndex >= 0) {
-            extension = filename.substring(dotIndex + 1).toLowerCase();
-        }
+        // 2. Détection du type (Photo vs Document)
+        boolean isPhoto = (mimeType != null && mimeType.toLowerCase().startsWith("image/"));
 
-        // 5. Générer UUID + clé MinIO
-        UUID attachmentId = UUID.randomUUID();
-        String bucket     = tenantContext.getBucket();
-        String minioKey   = tenantContext.buildMinioKey(
+        // 3. Préparation du stockage MinIO
+        // On génère un UUID unique pour le nom du fichier sur S3 (différent de l'ID DB)
+        UUID storageUuid = UUID.randomUUID();
+        String bucket = tenantContext.getBucket();
+        String minioKey = tenantContext.buildMinioKey(
                 ownerType.name(),
                 ownerId.toString(),
-                attachmentId.toString(),
+                storageUuid.toString(),
                 extension
         );
 
-        log.info("Uploading file: bucket={}, key={}", bucket, minioKey);
+        // 4. Upload physique vers MinIO
+        log.info("📤 Uploading {} to MinIO (Key: {})", isPhoto ? "PHOTO" : "FILE", minioKey);
+        minioClientService.upload(bucket, minioKey, request.getFile().uploadedFile(), mimeType);
 
-        // 6. Stockage MinIO
-        minioClientService.upload(
-                bucket,
-                minioKey,
-                request.getFile().uploadedFile(),
-                mimeType
-        );
-
-        // 7. Générer URL
+        // 5. Génération de l'URL d'accès
         String url = minioClientService.getPresignedUrl(bucket, minioKey);
 
-        // 8. Persistance PostgreSQL
-        Attachment entity = Attachment.builder()
-                .id(attachmentId)
-                .ownerType(ownerType)
+        // 6. Persistance en base de données
+        if (isPhoto) {
+            return persistAsPhoto(ownerType, ownerId, url, user, filename, mimeType);
+        } else {
+            return persistAsAttachment(ownerType, ownerId, bucket, minioKey, url, user, filename, mimeType, request.getFile().size());
+        }
+    }
+
+    private AttachmentResponse persistAsPhoto(OwnerType type, UUID ownerId, String url, String user, String name, String mime) {
+        long photoCount = photoRepository.count("ownerType = ?1 and ownerId = ?2", type, ownerId);
+
+        Photo photo = Photo.builder()
+                .ownerType(type)
                 .ownerId(ownerId)
-                .originalFilename(filename)
-                .mimeType(mimeType)
-                .sizeBytes(sizeBytes)
-                .minioKey(minioKey)
-                .bucket(bucket)
                 .url(url)
-                .createdBy(request.getCreatedBy())
+                .isMain(photoCount == 0)
+                .displayOrder((int) photoCount)
+                .createdBy(user)
+                .createdAt(LocalDateTime.now())
                 .build();
 
-        attachmentRepository.persist(entity);
-        log.info("Attachment persisted: {}", attachmentId);
+        // Hibernate génère l'ID ici
+        photoRepository.persist(photo);
+        log.info("✅ Photo saved with DB-ID: {}", photo.getId());
 
-        // 9. Retourner réponse
+        return buildResponseFromPhoto(photo, name, mime);
+    }
+
+    private AttachmentResponse persistAsAttachment(OwnerType type, UUID ownerId, String bucket, String key, String url, String user, String name, String mime, long size) {
+        Attachment entity = Attachment.builder()
+                // On ne passe PAS d'ID manuel ici pour éviter l'EntityExistsException
+                .ownerType(type)
+                .ownerId(ownerId)
+                .originalFilename(name)
+                .mimeType(mime)
+                .sizeBytes(size)
+                .minioKey(key)
+                .bucket(bucket)
+                .url(url)
+                .createdBy(user)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        // Hibernate génère l'ID ici
+        attachmentRepository.persist(entity);
+        log.info("✅ Attachment saved with DB-ID: {}", entity.getId());
+
         AttachmentResponse response = attachmentMapper.toResponse(entity);
         response.setUrl(url);
         return response;
     }
 
-    // GET BY ID
+    // ==========================================
+    //              GET BY ID
+    // ==========================================
     @Override
     @Transactional
     public AttachmentResponse getById(UUID id) {
-        Attachment entity = attachmentRepository.findByIdOptional(id)
-                .orElseThrow(() -> new AttachmentNotFoundException(id));
-
-        // Régénérer URL (Presigned URL expire après 15min)
-        String url = minioClientService.getPresignedUrl(
-                entity.getBucket(),
-                entity.getMinioKey()
-        );
-
-        AttachmentResponse response = attachmentMapper.toResponse(entity);
-        response.setUrl(url);
-        return response;
+        return attachmentRepository.findByIdOptional(id)
+                .map(e -> {
+                    AttachmentResponse res = attachmentMapper.toResponse(e);
+                    res.setUrl(minioClientService.getPresignedUrl(e.getBucket(), e.getMinioKey()));
+                    return res;
+                })
+                .orElseGet(() -> photoRepository.findByIdOptional(id)
+                        .map(p -> buildResponseFromPhoto(p, "Image", "image/*"))
+                        .orElseThrow(() -> new AttachmentNotFoundException(id)));
     }
 
-    // GET BY OWNER
+    // ==========================================
+    //             GET BY OWNER
+    // ==========================================
     @Override
     @Transactional
-    public List<AttachmentResponse> getByOwner(OwnerType ownerType,
-                                               UUID ownerId) {
-        return attachmentRepository.findByOwner(ownerType, ownerId)
+    public List<AttachmentResponse> getByOwner(OwnerType ownerType, UUID ownerId) {
+        List<AttachmentResponse> results = attachmentRepository.findByOwner(ownerType, ownerId)
                 .stream()
-                .map(entity -> {
-                    String url = minioClientService.getPresignedUrl(
-                            entity.getBucket(),
-                            entity.getMinioKey()
-                    );
-                    AttachmentResponse response =
-                            attachmentMapper.toResponse(entity);
-                    response.setUrl(url);
-                    return response;
+                .map(e -> {
+                    AttachmentResponse res = attachmentMapper.toResponse(e);
+                    res.setUrl(minioClientService.getPresignedUrl(e.getBucket(), e.getMinioKey()));
+                    return res;
                 })
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        photoRepository.find("ownerType = ?1 and ownerId = ?2", ownerType, ownerId)
+                .list()
+                .forEach(p -> results.add(buildResponseFromPhoto(p, "Image", "image/*")));
+
+        return results;
     }
 
-    // DELETE
+    // ==========================================
+    //               DELETE
+    // ==========================================
     @Override
     @Transactional
     public void delete(UUID id) {
-        Attachment entity = attachmentRepository.findByIdOptional(id)
-                .orElseThrow(() -> new AttachmentNotFoundException(id));
+        // 1. Chercher dans les Attachments (Documents)
+        var attachmentOpt = attachmentRepository.findByIdOptional(id);
+        if (attachmentOpt.isPresent()) {
+            Attachment e = attachmentOpt.get();
+            // Suppression physique sur MinIO
+            minioClientService.delete(e.getBucket(), e.getMinioKey());
+            // Suppression DB
+            attachmentRepository.delete(e);
+            log.info("🗑️ Document deleted (DB + MinIO): {}", id);
+            return;
+        }
 
-        // 1. Supprimer fichier depuis MinIO
-        minioClientService.delete(
-                entity.getBucket(),
-                entity.getMinioKey()
-        );
-        log.info("File deleted from MinIO: {}", entity.getMinioKey());
+        // 2. Chercher dans les Photos
+        var photoOpt = photoRepository.findByIdOptional(id);
+        if (photoOpt.isPresent()) {
+            Photo p = photoOpt.get();
+            // Note: On pourrait aussi supprimer sur MinIO ici si on stockait la clé
+            photoRepository.delete(p);
+            log.info("🗑️ Photo deleted (DB): {}", id);
+            return;
+        }
 
-        // 2. Supprimer métadonnées depuis PostgreSQL
-        attachmentRepository.delete(entity);
-        log.info("Metadata deleted: {}", id);
+        throw new AttachmentNotFoundException(id);
     }
 
-    // Validation MIME
-    private boolean isAllowedMimeType(String mimeType) {
-        if (mimeType == null) return false;
-        String mt = mimeType.toLowerCase();
-        return mt.startsWith("image/")        ||
-                mt.equals("application/pdf")   ||
-                mt.startsWith("video/")        ||
-                mt.contains("msword")          ||
-                mt.contains("officedocument")  ||
-                mt.contains("spreadsheet");
+    // ==========================================
+    //              HELPERS
+    // ==========================================
+    private void validateRequest(CreateAttachmentRequest request) {
+        if (request.getFile() == null || request.getFile().uploadedFile() == null) {
+            throw new BusinessException("Missing file", "MISSING_FILE", 400);
+        }
+        if (request.getFile().size() > MAX_SIZE) {
+            throw new BusinessException("File too large (max 20MB)", "FILE_TOO_LARGE", 413);
+        }
+    }
+
+    private String getExtension(String filename) {
+        int dotIndex = filename.lastIndexOf('.');
+        return (dotIndex >= 0) ? filename.substring(dotIndex + 1).toLowerCase() : "bin";
+    }
+
+    private AttachmentResponse buildResponseFromPhoto(Photo p, String name, String mime) {
+        AttachmentResponse res = new AttachmentResponse();
+        res.setId(p.getId());
+        res.setOwnerType(p.getOwnerType());
+        res.setOwnerId(p.getOwnerId());
+        res.setUrl(p.getUrl());
+        res.setMimeType(mime);
+        res.setOriginalFilename(name);
+        res.setCreatedBy(p.getCreatedBy());
+        res.setCreatedAt(p.getCreatedAt());
+        return res;
     }
 }
