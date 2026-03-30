@@ -42,10 +42,10 @@ public class Attachment {
     @Column(name = "size_bytes", nullable = false)
     private Long sizeBytes;
 
-    @Column(name = "minio_key", nullable = false)
+    @Column(name = "minio_key", nullable = false, columnDefinition = "TEXT")
     private String minioKey;
 
-    @Column(name = "bucket", nullable = false)
+    @Column(name = "bucket", nullable = false, columnDefinition = "TEXT")
     private String bucket;
 
     @Builder.Default

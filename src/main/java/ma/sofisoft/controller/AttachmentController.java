@@ -73,4 +73,16 @@ public class AttachmentController {
         attachmentService.delete(id);
         return Response.noContent().build();
     }
+
+    @DELETE
+    @Path("/owner/{ownerType}/{ownerId}")
+    public Response deleteAllByOwner(
+            @PathParam("ownerType") OwnerType ownerType,
+            @PathParam("ownerId") UUID ownerId) {
+
+        log.info("REST request to delete all attachments for owner: {}/{}", ownerType, ownerId);
+        attachmentService.deleteByOwner(ownerType, ownerId);
+
+        return Response.noContent().build();
+    }
 }

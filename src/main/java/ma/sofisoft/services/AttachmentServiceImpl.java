@@ -193,7 +193,7 @@ public class AttachmentServiceImpl implements AttachmentService {
     @Override
     @Transactional
     public void deleteByOwner(OwnerType ownerType, UUID ownerId) {
-        log.info("🗑️ Deleting all resources for owner: {}/{}", ownerType, ownerId);
+        log.info("Deleting all resources for owner: {}/{}", ownerType, ownerId);
 
         // Nettoyage MinIO
         attachmentRepository.find("ownerType = ?1 and ownerId = ?2", ownerType, ownerId)
