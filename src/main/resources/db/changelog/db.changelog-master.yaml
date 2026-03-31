@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - property:
+      name: now
+      value: now()
+      dbms: postgresql
+
+  # Initialisation of tables (Photos, Attachments)
+  - include:
+      file: db/changelog/v1.0.0_init_schema.yaml

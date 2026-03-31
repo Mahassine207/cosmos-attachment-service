@@ -33,6 +33,9 @@ public class Photo {
     @Column(name = "url", nullable = false, columnDefinition = "TEXT")
     private String url;
 
+    @Column(name = "size_bytes", nullable = false)
+    private Long sizeBytes;
+
     @Column(name = "is_main", nullable = false)
     private Boolean isMain;
 

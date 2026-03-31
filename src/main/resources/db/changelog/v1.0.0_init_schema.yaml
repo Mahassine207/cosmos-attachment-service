@@ -1,0 +1,79 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260331-001-initial-schema
+      author: mahassine
+      changes:
+        - createTable:
+            tableName: attachment
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: original_filename
+                  type: TEXT
+              - column:
+                  name: mime_type
+                  type: VARCHAR(100)
+              - column:
+                  name: size_bytes
+                  type: BIGINT
+              - column:
+                  name: minio_key
+                  type: TEXT
+              - column:
+                  name: bucket
+                  type: TEXT
+              - column:
+                  name: url
+                  type: TEXT
+              - column:
+                  name: owner_id
+                  type: UUID
+              - column:
+                  name: owner_type
+                  type: VARCHAR(50)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+              - column:
+                  name: created_by
+                  type: VARCHAR(255)
+
+        - createTable:
+            tableName: photos
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: url
+                  type: TEXT
+              - column:
+                  name: owner_id
+                  type: UUID
+              - column:
+                  name: owner_type
+                  type: VARCHAR(50)
+              - column:
+                  name: size_bytes
+                  type: BIGINT
+              - column:
+                  name: is_main
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: display_order
+                  type: INT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+              - column:
+                  name: created_by
+                  type: VARCHAR(255)

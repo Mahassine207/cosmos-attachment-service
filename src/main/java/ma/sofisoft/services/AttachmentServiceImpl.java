@@ -58,6 +58,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         String mimeType = request.getFile().contentType();
         String filename = request.getFile().fileName();
         String extension = getExtension(filename);
+        long size = request.getFile().size();
         String user = (request.getCreatedBy() != null) ? request.getCreatedBy() : "anonymous";
 
         // Type detection (Photo OR Document) By extension
@@ -77,23 +78,24 @@ public class AttachmentServiceImpl implements AttachmentService {
         log.info("Uploading {} to MinIO (Key: {})", isPhoto ? "PHOTO" : "FILE", minioKey);
         minioClientService.upload(bucket, minioKey, request.getFile().uploadedFile(), mimeType);
 
-        // Genaration of PresignedUrl
-        String url = minioClientService.getPresignedUrl(bucket, minioKey);
+        // Genaration of Url (URL permanente via bucket public)
+        String url = minioClientService.getPublicUrl(bucket, minioKey);
 
         // Persistance in DB
         if (isPhoto) {
-            return persistAsPhoto(ownerType, ownerId, url, user, filename, mimeType);
+            return persistAsPhoto(ownerType, ownerId, url, user, filename, mimeType, size);
         } else {
-            return persistAsAttachment(ownerType, ownerId, bucket, minioKey, url, user, filename, mimeType, request.getFile().size());
+            return persistAsAttachment(ownerType, ownerId, bucket, minioKey, url, user, filename, mimeType, size);
         }
     }
 
-    private AttachmentResponse persistAsPhoto(OwnerType type, UUID ownerId, String url, String user, String name, String mime) {
+    private AttachmentResponse persistAsPhoto(OwnerType type, UUID ownerId, String url, String user, String name, String mime, long size) {
         long photoCount = photoRepository.count("ownerType = ?1 and ownerId = ?2", type, ownerId);
         Photo photo = Photo.builder()
                 .ownerType(type)
                 .ownerId(ownerId)
                 .url(url)
+                .sizeBytes(size)
                 .isMain(photoCount == 0)
                 .displayOrder((int) photoCount)
                 .createdBy(user)
@@ -128,14 +130,16 @@ public class AttachmentServiceImpl implements AttachmentService {
         return response;
     }
 
-    // GET BY ID
+    // GET BY ID : Recherche dans les deux tables
     @Override
     @Transactional
     public AttachmentResponse getById(UUID id) {
+        log.info("Fetching metadata for ID: {}", id);
         return attachmentRepository.findByIdOptional(id)
                 .map(e -> {
                     AttachmentResponse res = attachmentMapper.toResponse(e);
-                    res.setUrl(minioClientService.getPresignedUrl(e.getBucket(), e.getMinioKey()));
+                    // L'URL est stockée en base et n'expire pas
+                    res.setUrl(e.getUrl());
                     return res;
                 })
                 .orElseGet(() -> photoRepository.findByIdOptional(id)
@@ -143,15 +147,16 @@ public class AttachmentServiceImpl implements AttachmentService {
                         .orElseThrow(() -> new AttachmentNotFoundException(id)));
     }
 
-    // GET BY OWNER
+    // LIST BY OWNER
     @Override
     @Transactional
     public List<AttachmentResponse> getByOwner(OwnerType ownerType, UUID ownerId) {
+        log.info("Listing resources for {}/{}", ownerType, ownerId);
         List<AttachmentResponse> results = attachmentRepository.findByOwner(ownerType, ownerId)
                 .stream()
                 .map(e -> {
                     AttachmentResponse res = attachmentMapper.toResponse(e);
-                    res.setUrl(minioClientService.getPresignedUrl(e.getBucket(), e.getMinioKey()));
+                    res.setUrl(e.getUrl());
                     return res;
                 })
                 .collect(Collectors.toCollection(ArrayList::new));
@@ -181,6 +186,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         var photoOpt = photoRepository.findByIdOptional(id);
         if (photoOpt.isPresent()) {
             Photo p = photoOpt.get();
+            // Note: Si tes photos sont aussi sur MinIO, ajoute l'appel delete ici
             photoRepository.delete(p);
             log.info("Photo deleted (DB): {}", id);
             return;

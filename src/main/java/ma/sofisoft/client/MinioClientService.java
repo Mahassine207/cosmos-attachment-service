@@ -6,10 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import java.nio.file.Path;
-import java.time.Duration;
 
 @Slf4j
 @ApplicationScoped
@@ -18,8 +15,26 @@ public class MinioClientService {
     @Inject
     S3Client s3Client;
 
-    @Inject
-    S3Presigner s3Presigner;
+    private void setBucketPublicPolicy(String bucket) {
+        String publicPolicy = """
+            {
+              "Version":"2012-10-17",
+              "Statement":[
+                {
+                  "Effect":"Allow",
+                  "Principal":"*",
+                  "Action":["s3:GetObject"],
+                  "Resource":["arn:aws:s3:::%s/*"]
+                }
+              ]
+            }
+            """.formatted(bucket);
+
+        s3Client.putBucketPolicy(PutBucketPolicyRequest.builder()
+                .bucket(bucket)
+                .policy(publicPolicy)
+                .build());
+    }
 
     // UPLOAD
     public void upload(String bucket,
@@ -36,6 +51,7 @@ public class MinioClientService {
                                 .bucket(bucket)
                                 .build());
             }
+            setBucketPublicPolicy(bucket);
 
             // Upload file
             s3Client.putObject(
@@ -56,32 +72,9 @@ public class MinioClientService {
         }
     }
 
-    // Genarate a Presigned Url
-    public String getPresignedUrl(String bucket, String minioKey) {
-        try {
-            GetObjectPresignRequest presignRequest =
-                    GetObjectPresignRequest.builder()
-                            .signatureDuration(Duration.ofMinutes(15))
-                            .getObjectRequest(
-                                    GetObjectRequest.builder()
-                                            .bucket(bucket)
-                                            .key(minioKey)
-                                            .build())
-                            .build();
-
-            String url = s3Presigner
-                    .presignGetObject(presignRequest)
-                    .url()
-                    .toString();
-
-            log.debug("Presigned URL generated: {}/{}", bucket, minioKey);
-            return url;
-
-        } catch (Exception e) {
-            log.error("Presigned URL error: {}", e.getMessage());
-            throw new RuntimeException(
-                    "MinIO presigned URL failed: " + e.getMessage());
-        }
+    // Genarate Url
+    public String getPublicUrl(String bucket, String minioKey) {
+        return String.format("http://%s/%s/%s", "localhost:9000", bucket, minioKey);
     }
 
     // DELETE
